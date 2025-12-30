@@ -25,17 +25,18 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.24'
+          cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Download deps
         working-directory: backend
         run: go mod download
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: v1.64.4
-          working-directory: backend
-          args: ./... --enable-only=staticcheck
+        working-directory: backend
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.4
+          golangci-lint run ./... --enable-only=staticcheck
           
       - name: Run tests
         working-directory: backend
