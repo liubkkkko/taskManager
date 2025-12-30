@@ -1,0 +1,63 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Download deps
+        working-directory: backend
+        run: go mod download
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.64.4
+          working-directory: backend
+          args: ./... --enable-only=staticcheck
+          
+      - name: Run tests
+        working-directory: backend
+        run: go test ./... -v
+
+      - name: Build Docker image
+        run: |
+          docker build -t taskapi:latest -f backend/Dockerfile backend/
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: |
+          docker tag taskapi:latest ghcr.io/${{ github.repository_owner }}/taskapi:latest
+          docker push ghcr.io/${{ github.repository_owner }}/taskapi:latest
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/taskapi:latest

@@ -1,0 +1,369 @@
+# -----------------------------------------------------------------------
+# TaskManager Production Configuration
+# -----------------------------------------------------------------------
+# This file contains production-ready configuration with:
+# - Specific container image versions
+# - Proper resource limits
+# - Production database configuration
+# - Health checks and restart policies
+# -----------------------------------------------------------------------
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskmanager
+---
+# -----------------------------------------------------------------------
+# ConfigMaps
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: taskmanager
+data:
+  DB_HOST: "postgres"
+  REDIS_ADDR: "redis:6379"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: taskmanager
+data:
+  REACT_APP_API_URL: "/api"
+---
+# -----------------------------------------------------------------------
+# Secrets - ВАЖНО: Замініть на реальні значення!
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+  namespace: taskmanager
+type: Opaque
+stringData:
+  DB_USER: "taskuser"  # PROD: Змінити на безпечний username
+  DB_PASSWORD: "CHANGE_ME_TO_SECURE_PASSWORD"  # PROD: Генерувати: openssl rand -base64 32
+  DB_NAME: "taskmanager_prod"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secrets
+  namespace: taskmanager
+type: Opaque
+stringData:
+  POSTGRES_USER: "taskuser"
+  POSTGRES_PASSWORD: "CHANGE_ME_TO_SECURE_PASSWORD"
+  POSTGRES_DB: "taskmanager_prod"
+---
+# -----------------------------------------------------------------------
+# PostgreSQL Storage
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: taskmanager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi  # Настроїти за потребою
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine  # Специфічна версія для PROD
+          envFrom:
+            - secretRef:
+                name: postgres-secrets
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: taskmanager
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+---
+# -----------------------------------------------------------------------
+# Redis
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine  # Специфічна версія для PROD
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: taskmanager
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+---
+# -----------------------------------------------------------------------
+# Backend API
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: taskmanager
+spec:
+  replicas: 3  # High Availability для PROD
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: your-registry/taskapi:v1.0.0  # PROD: Замінити на реальний реєстр та версію
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: taskmanager
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+---
+# -----------------------------------------------------------------------
+# Frontend
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: taskmanager
+spec:
+  replicas: 2  # High Availability для PROD
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - frontend
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: frontend
+          image: your-registry/taskfrontend:v1.0.0  # PROD: Замінити на реальний реєстр та версію
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: frontend-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: taskmanager
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+---
+# -----------------------------------------------------------------------
+# Ingress for PROD - Требує налаштування домену та TLS
+# -----------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskmanager-ingress
+  namespace: taskmanager
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Для автоматичних сертифікатів
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - taskmanager.yourdomain.com  # PROD: Замінити на реальний домен
+      secretName: tls-cert
+  rules:
+    - host: taskmanager.yourdomain.com  # PROD: Замінити на реальний домен
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

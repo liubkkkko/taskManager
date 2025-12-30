@@ -1,0 +1,231 @@
+# -----------------------------------------------------------------------
+# Namespace
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskmanager
+---
+# -----------------------------------------------------------------------
+# ConfigMaps
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: taskmanager
+data:
+  DB_HOST: "postgres"
+  REDIS_ADDR: "redis:6379"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: taskmanager
+data:
+  REACT_APP_API_URL: "/api"
+---
+# -----------------------------------------------------------------------
+# Secrets
+# -----------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+  namespace: taskmanager
+type: Opaque
+stringData:
+  DB_USER: "liubkkkko"
+  DB_PASSWORD: "password"
+  DB_NAME: "fullstack_api"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secrets
+  namespace: taskmanager
+type: Opaque
+stringData:
+  POSTGRES_USER: "liubkkkko"
+  POSTGRES_PASSWORD: "password"
+  POSTGRES_DB: "fullstack_api"
+---
+# -----------------------------------------------------------------------
+# Postgres
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:latest
+          envFrom:
+            - secretRef:
+                name: postgres-secrets
+          ports:
+            - containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: taskmanager
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+---
+# -----------------------------------------------------------------------
+# Redis
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:latest
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: taskmanager
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+---
+# -----------------------------------------------------------------------
+# Backend
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: taskapi:local
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: taskmanager
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+---
+# -----------------------------------------------------------------------
+# Frontend
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: taskfrontend:local
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: frontend-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: taskmanager
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+---
+# -----------------------------------------------------------------------
+# Ingress
+# -----------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskmanager-ingress
+  namespace: taskmanager
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # Все запити йдуть на frontend
+          # Frontend матиме reverse proxy для /api на backend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+
+
+
+
+
