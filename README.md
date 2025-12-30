@@ -245,7 +245,21 @@ This project is licensed under the MIT License.
 
 See full troubleshooting in [KUBERNETES.md](infra/docs/KUBERNETES.md#troubleshooting).
 
-## 📞 Support
+## � Security Notes
+
+### Known CVEs
+
+**CVE-2025-30204** (golang-jwt/jwt v3.2.2 - HIGH)
+- Indirect dependency pulled in via echo framework
+- Impact: Excessive memory allocation during JWT header parsing
+- **Status**: NOT EXPLOITABLE in this application
+- **Reason**: This application does NOT use JWT middleware from echo
+- **Authentication**: Uses custom JWT token handling with `github.com/golang-jwt/jwt/v5` (v5.3.0)
+- **Mitigation**: If JWT middleware is enabled in future, upgrade to patched version
+
+Trivy vulnerability scans are run on every build via GitHub Actions.
+
+## �📞 Support
 
 For issues and questions, create an issue in the repository.
 

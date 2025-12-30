@@ -5,8 +5,6 @@ go 1.24.0
 require (
 	github.com/badoux/checkmail v1.2.1
 	github.com/go-redis/redis/v8 v8.11.5
-	// Exclude vulnerable jwt v3 in favor of jwt v5
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jinzhu/gorm v1.9.16
 	github.com/joho/godotenv v1.5.1
