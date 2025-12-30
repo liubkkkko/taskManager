@@ -64,7 +64,12 @@ func (server *Server) GoogleAuthCallback(c echo.Context) error {
     if err != nil {
         return c.JSON(http.StatusInternalServerError, map[string]string{"error": "userinfo fetch failed"})
     }
-    defer resp.Body.Close()
+    defer func() {
+        if err := resp.Body.Close(); err != nil {
+            // log the error if needed
+            _ = err
+        }
+    }()
 
     var gi struct {
         Sub           string `json:"sub"`
