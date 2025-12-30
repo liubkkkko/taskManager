@@ -30,7 +30,9 @@ jobs:
 
       - name: Download deps
         working-directory: backend
-        run: go mod download
+        run: |
+          go mod download
+          go mod tidy
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.4
