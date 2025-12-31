@@ -83,6 +83,33 @@ spec:
                 name: postgres-secrets
           ports:
             - containerPort: 5432
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
 ---
 apiVersion: v1
 kind: Service
@@ -118,6 +145,31 @@ spec:
           image: redis:latest
           ports:
             - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
 ---
 apiVersion: v1
 kind: Service
@@ -151,6 +203,7 @@ spec:
       containers:
         - name: backend
           image: taskapi:local
+          imagePullPolicy: Never
           envFrom:
             - configMapRef:
                 name: backend-config
@@ -158,6 +211,37 @@ spec:
                 name: backend-secrets
           ports:
             - containerPort: 8080
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -191,11 +275,35 @@ spec:
       containers:
         - name: frontend
           image: taskfrontend:local
+          imagePullPolicy: Never
           ports:
             - containerPort: 80
           envFrom:
             - configMapRef:
                 name: frontend-config
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
 ---
 apiVersion: v1
 kind: Service
@@ -216,13 +324,23 @@ kind: Ingress
 metadata:
   name: taskmanager-ingress
   namespace: taskmanager
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
     - http:
         paths:
-          # Все запити йдуть на frontend
-          # Frontend матиме reverse proxy для /api на backend
+          # API routes to backend service with rewrite
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          # Everything else goes to frontend
           - path: /
             pathType: Prefix
             backend:

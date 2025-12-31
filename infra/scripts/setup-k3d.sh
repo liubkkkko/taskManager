@@ -125,7 +125,7 @@ EOF
 deploy_app() {
     log_info "Розгорнемо приложення..."
     
-    kubectl apply -f "${PROJECT_ROOT}/infra/k8s/all-in-one-dev.yaml" \
+    kubectl apply -f "${PROJECT_ROOT}/infra/k8s/all-in-one.yaml" \
         || log_error "Помилка при розгортанні приложення"
     
     log_info "Чекаємо поки поди запустяться..."
